@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::discover::detect;
 use crate::domain::model::{Kind, Occurrence};
 use crate::infra::http::{Method, Response};
-use crate::mock::{MockFs, MockHttp};
+use crate::mock::{MockFs, MockHttp, ref_advertisement};
 use crate::service::{PinService, unpinned};
 
 const CHECKOUT_SHA: &str = "11bd71901bbe5b1630ceea73d27597364c9af683";
@@ -72,27 +72,12 @@ fn digest(c: char) -> String {
     format!("sha256:{}", c.to_string().repeat(64))
 }
 
-/// A git smart-HTTP ref advertisement as served by `info/refs`.
-fn refs_body(refs: &[(&str, &str)]) -> Vec<u8> {
-    let pkt = |s: String| format!("{:04x}{s}", s.len() + 4);
-    let mut body = pkt("# service=git-upload-pack\n".into()) + "0000";
-    for (i, (sha, name)) in refs.iter().enumerate() {
-        let caps = if i == 0 {
-            "\0multi_ack side-band-64k"
-        } else {
-            ""
-        };
-        body += &pkt(format!("{sha} {name}{caps}\n"));
-    }
-    (body + "0000").into_bytes()
-}
-
 fn git_mock(http: MockHttp, repo_url: &str, refs: &[(&str, &str)]) -> MockHttp {
     let url = format!("{repo_url}.git/info/refs?service=git-upload-pack");
     http.on(
         Method::Get,
         &url,
-        Response::new(200).with_body(refs_body(refs)),
+        Response::new(200).with_body(ref_advertisement(refs)),
     )
 }
 
@@ -381,23 +366,27 @@ async fn failed_resolutions_leave_files_untouched() {
 }
 
 #[test]
-fn apply_refuses_files_changed_since_scan() {
+fn apply_refuses_files_changed_since_scan_and_writes_nothing() {
     use crate::domain::model::Resolution;
     use crate::infra::fs::FileSystem;
 
     let (service, occurrences) = service();
-    let occ = occurrences
-        .iter()
-        .find(|o| o.path.as_path() == Path::new("compose.yaml") && o.reference().is_some())
-        .unwrap();
-    let resolutions = [(
-        occ.reference().unwrap().clone(),
-        Ok(Resolution::Image {
-            digest: digest('c'),
-        }),
-    )]
+    let find = |path: &str| {
+        occurrences
+            .iter()
+            .find(|o| o.path.as_path() == Path::new(path) && o.reference().is_some())
+            .unwrap()
+    };
+    let (dockerfile, compose) = (find("Dockerfile"), find("compose.yaml"));
+    let resolution = Ok(Resolution::Image {
+        digest: digest('c'),
+    });
+    let resolutions = [
+        (dockerfile.reference().unwrap().clone(), resolution.clone()),
+        (compose.reference().unwrap().clone(), resolution),
+    ]
     .into();
-    let edits = service.plan(&[occ], &resolutions).unwrap();
+    let edits = service.plan(&[dockerfile, compose], &resolutions).unwrap();
 
     let changed = "services:\n  db:\n    image: quay.io/acme/postgres:17\n";
     service
@@ -405,6 +394,8 @@ fn apply_refuses_files_changed_since_scan() {
         .write("compose.yaml".as_ref(), changed)
         .unwrap();
 
+    // The Dockerfile comes first and is unchanged, but isn't written either.
     assert!(service.apply(&edits).is_err());
     assert_eq!(service.fs().get("compose.yaml"), changed);
+    assert_eq!(service.fs().get("Dockerfile"), DOCKERFILE);
 }

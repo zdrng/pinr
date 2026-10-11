@@ -16,17 +16,23 @@ impl FileSystem for RealFs {
     }
 
     /// Write to a temp file next to the target, then rename, so a crash never
-    /// leaves a half-written file behind.
+    /// leaves a half-written file behind. The temp file is removed on failure.
     fn write(&self, path: &Path, contents: &str) -> Result<()> {
         let name = path
             .file_name()
             .context("path has no file name")?
             .to_string_lossy();
         let tmp = path.with_file_name(format!(".{name}.pinr-tmp"));
-        std::fs::write(&tmp, contents).with_context(|| format!("writing {}", tmp.display()))?;
-        if let Ok(meta) = std::fs::metadata(path) {
-            std::fs::set_permissions(&tmp, meta.permissions())?;
-        }
-        std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))
+        replace_via(&tmp, path, contents).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })
     }
+}
+
+fn replace_via(tmp: &Path, path: &Path, contents: &str) -> Result<()> {
+    std::fs::write(tmp, contents).with_context(|| format!("writing {}", tmp.display()))?;
+    if let Ok(meta) = std::fs::metadata(path) {
+        std::fs::set_permissions(tmp, meta.permissions())?;
+    }
+    std::fs::rename(tmp, path).with_context(|| format!("replacing {}", path.display()))
 }

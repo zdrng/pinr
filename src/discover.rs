@@ -31,6 +31,9 @@ pub fn detect(path: &Path) -> Option<Ecosystem> {
         Some(Ecosystem::GitlabCi)
     } else if is_yaml && (name.starts_with("compose") || name.starts_with("docker-compose")) {
         Some(Ecosystem::Compose)
+    } else if name.ends_with(".dockerignore") {
+        // `Dockerfile.dockerignore` holds ignore patterns, not instructions.
+        None
     } else if ["Dockerfile", "Containerfile"]
         .iter()
         .any(|base| name == *base || name.starts_with(&format!("{base}.")))
@@ -66,6 +69,8 @@ mod tests {
             ("Dockerfile.dev", Some(Ecosystem::Dockerfile)),
             ("api.Dockerfile", Some(Ecosystem::Dockerfile)),
             ("Containerfile", Some(Ecosystem::Dockerfile)),
+            ("Dockerfile.dockerignore", None),
+            ("api.Dockerfile.dockerignore", None),
             ("systemd/web.container", Some(Ecosystem::Quadlet)),
             ("systemd/base.image", Some(Ecosystem::Quadlet)),
             ("config.yml", None),

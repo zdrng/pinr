@@ -51,6 +51,10 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
+    if cli.command.is_none() && !std::io::stdout().is_terminal() {
+        Cli::command().print_help()?;
+        return Ok(ExitCode::SUCCESS);
+    }
     let config = config::load(&cli.dir)?;
     let files = discover::discover(&cli.dir);
     let service = PinService::new(RealFs, ReqwestHttp::new()?, config);
@@ -59,12 +63,8 @@ async fn main() -> Result<ExitCode> {
     match cli.command {
         Some(Command::Check) => Ok(cli::check(&occurrences)),
         Some(Command::Pin { dry_run }) => cli::pin(&service, &occurrences, dry_run).await,
-        None if std::io::stdout().is_terminal() => {
-            tui::run(Arc::new(service), occurrences).await?;
-            Ok(ExitCode::SUCCESS)
-        }
         None => {
-            Cli::command().print_help()?;
+            tui::run(Arc::new(service), occurrences).await?;
             Ok(ExitCode::SUCCESS)
         }
     }

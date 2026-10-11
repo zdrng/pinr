@@ -26,12 +26,7 @@ impl Extractor for GithubActions {
 
 /// `owner/repo[/path]@rev`, `docker://image` or a local `./path`.
 fn uses(s: &Scalar) -> Option<Found> {
-    let warning = |msg: String| {
-        Some(Found {
-            span: s.span.clone(),
-            kind: Kind::Warning(msg),
-        })
-    };
+    let warning = |msg: String| Some(Found::warning(s.span.clone(), msg));
     let text = s.text;
 
     if text.starts_with("./") {

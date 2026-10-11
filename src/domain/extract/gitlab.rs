@@ -43,12 +43,7 @@ impl GitlabCi {
     /// One value of an `include` entry; `key` is its path inside the entry.
     fn include(&self, s: &Scalar, key: &[&str], all: &[Scalar]) -> Option<Found> {
         let text = s.text;
-        let warning = |msg: String| {
-            Some(Found {
-                span: s.span.clone(),
-                kind: Kind::Warning(msg),
-            })
-        };
+        let warning = |msg: String| Some(Found::warning(s.span.clone(), msg));
 
         match key {
             [] if text.starts_with("http") => warning(remote(text)),
@@ -86,12 +81,7 @@ impl GitlabCi {
     /// `<host>/<project path>/<component name>@<version>`.
     fn component(&self, s: &Scalar) -> Option<Found> {
         let text = s.text;
-        let warning = |msg: String| {
-            Some(Found {
-                span: s.span.clone(),
-                kind: Kind::Warning(msg),
-            })
-        };
+        let warning = |msg: String| Some(Found::warning(s.span.clone(), msg));
 
         let (host, rest) = match text.strip_prefix("$CI_SERVER_FQDN/") {
             Some(rest) => (self.host.as_str(), rest),

@@ -294,14 +294,15 @@ pub async fn run<F: FileSystem + 'static, H: Http + 'static>(
     service: Arc<PinService<F, H>>,
     occurrences: Vec<Occurrence>,
 ) -> Result<()> {
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (tx, rx) = mpsc::unbounded_channel();
     let resolver = spawn_resolver(service.clone(), occurrences.clone(), tx.clone());
     let mut app = App::new(occurrences);
 
     // `init` also installs a panic hook that restores the terminal.
     let mut terminal = ratatui::init();
     spawn_input(tx);
-    let flow = event_loop(&mut terminal, &mut app, &mut rx).await;
+    // Takes `rx`, so the input thread stops reading keys once the loop ends.
+    let flow = event_loop(&mut terminal, &mut app, rx).await;
     ratatui::restore();
     resolver.abort();
 
@@ -315,7 +316,7 @@ pub async fn run<F: FileSystem + 'static, H: Http + 'static>(
 async fn event_loop(
     terminal: &mut DefaultTerminal,
     app: &mut App,
-    rx: &mut UnboundedReceiver<Msg>,
+    mut rx: UnboundedReceiver<Msg>,
 ) -> Result<Flow> {
     loop {
         terminal.draw(|frame| app.view(frame))?;

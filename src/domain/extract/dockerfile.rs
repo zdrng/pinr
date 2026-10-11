@@ -18,7 +18,12 @@ impl Extractor for Dockerfile {
         while i < lines.len() {
             let (offset, line) = lines[i];
             if in_header {
-                if let Some((key, value, at)) = directive(line) {
+                let known = directive(line).filter(|(key, ..)| {
+                    ["syntax", "escape", "check"]
+                        .iter()
+                        .any(|k| key.eq_ignore_ascii_case(k))
+                });
+                if let Some((key, value, at)) = known {
                     if key.eq_ignore_ascii_case("syntax") {
                         found.push(image(offset + at, value));
                     } else if key.eq_ignore_ascii_case("escape") {
@@ -27,6 +32,7 @@ impl Extractor for Dockerfile {
                     i += 1;
                     continue;
                 }
+                // Anything else, even an unknown directive, ends the header.
                 in_header = false;
             }
             if is_blank_or_comment(line) {
@@ -264,6 +270,9 @@ COPY --from=test /out/app /app
                 ("node:20", img("node:20")),
             ]
         );
+
+        let src = "# unknown=1\n# syntax=evil:1\nFROM node:20\n";
+        assert_eq!(extract(src), vec![("node:20", img("node:20"))]);
     }
 
     #[test]
