@@ -1,0 +1,79 @@
+//! Finds the files pinr understands.
+
+use std::path::{Path, PathBuf};
+
+use crate::domain::model::Ecosystem;
+
+/// Walk `root` (respecting .gitignore) and return every file with its ecosystem.
+pub fn discover(root: &Path) -> Vec<(PathBuf, Ecosystem)> {
+    let mut files: Vec<_> = ignore::WalkBuilder::new(root)
+        .hidden(false) // .github/ and .gitlab-ci.yml are hidden
+        .filter_entry(|e| e.file_name() != ".git")
+        .build()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
+        .filter_map(|e| Some((e.path().to_path_buf(), detect(e.path())?)))
+        .collect();
+    files.sort();
+    files
+}
+
+pub fn detect(path: &Path) -> Option<Ecosystem> {
+    let name = path.file_name()?.to_str()?;
+    let is_yaml = name.ends_with(".yml") || name.ends_with(".yaml");
+    let in_workflows = path
+        .parent()
+        .is_some_and(|p| p.ends_with(".github/workflows"));
+
+    if is_yaml && (in_workflows || name == "action.yml" || name == "action.yaml") {
+        Some(Ecosystem::GithubActions)
+    } else if is_yaml && name.contains("gitlab-ci") {
+        Some(Ecosystem::GitlabCi)
+    } else if is_yaml && (name.starts_with("compose") || name.starts_with("docker-compose")) {
+        Some(Ecosystem::Compose)
+    } else if ["Dockerfile", "Containerfile"]
+        .iter()
+        .any(|base| name == *base || name.starts_with(&format!("{base}.")))
+        || name.ends_with(".Dockerfile")
+        || name.ends_with(".dockerfile")
+        || name.ends_with(".Containerfile")
+    {
+        Some(Ecosystem::Dockerfile)
+    } else if [".container", ".image", ".volume"]
+        .iter()
+        .any(|ext| name.ends_with(ext))
+    {
+        Some(Ecosystem::Quadlet)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_ecosystems_by_path() {
+        let cases = [
+            (".github/workflows/ci.yml", Some(Ecosystem::GithubActions)),
+            ("actions/setup/action.yaml", Some(Ecosystem::GithubActions)),
+            (".gitlab-ci.yml", Some(Ecosystem::GitlabCi)),
+            ("ci/build.gitlab-ci.yaml", Some(Ecosystem::GitlabCi)),
+            ("compose.yaml", Some(Ecosystem::Compose)),
+            ("deploy/docker-compose.prod.yml", Some(Ecosystem::Compose)),
+            ("Dockerfile", Some(Ecosystem::Dockerfile)),
+            ("Dockerfile.dev", Some(Ecosystem::Dockerfile)),
+            ("api.Dockerfile", Some(Ecosystem::Dockerfile)),
+            ("Containerfile", Some(Ecosystem::Dockerfile)),
+            ("systemd/web.container", Some(Ecosystem::Quadlet)),
+            ("systemd/base.image", Some(Ecosystem::Quadlet)),
+            ("config.yml", None),
+            (".github/dependabot.yml", None),
+            ("README.md", None),
+        ];
+        for (path, expected) in cases {
+            assert_eq!(detect(Path::new(path)), expected, "{path}");
+        }
+    }
+}
