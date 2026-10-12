@@ -85,6 +85,15 @@ pub struct Found {
     pub kind: Kind,
 }
 
+impl Found {
+    pub fn warning(span: Range<usize>, reason: String) -> Self {
+        Found {
+            span,
+            kind: Kind::Warning(reason),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
     /// A reference that can be pinned (or already is). The span is the text that

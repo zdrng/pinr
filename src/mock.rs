@@ -48,6 +48,22 @@ impl FileSystem for MockFs {
     }
 }
 
+/// A git smart-HTTP ref advertisement, as served by `info/refs`, from
+/// `(sha, refname)` lines.
+pub fn ref_advertisement(refs: &[(&str, &str)]) -> Vec<u8> {
+    let pkt = |s: &str| format!("{:04x}{s}", s.len() + 4);
+    let mut body = pkt("# service=git-upload-pack\n") + "0000";
+    for (i, (sha, name)) in refs.iter().enumerate() {
+        let caps = if i == 0 {
+            "\0multi_ack side-band-64k"
+        } else {
+            ""
+        };
+        body += &pkt(&format!("{sha} {name}{caps}\n"));
+    }
+    (body + "0000").into_bytes()
+}
+
 /// Answers requests by exact method + URL. If several responses are registered
 /// for the same request they are returned in order, the last one repeating
 /// (e.g. 401 first, then 200 once a token is sent). Unknown requests are an

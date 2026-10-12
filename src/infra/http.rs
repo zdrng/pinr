@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::time::Duration;
 
 use anyhow::Result;
 
@@ -87,6 +88,9 @@ impl ReqwestHttp {
     pub fn new() -> Result<Self> {
         let client = reqwest::Client::builder()
             .user_agent(concat!("pinr/", env!("CARGO_PKG_VERSION")))
+            // A stalled registry must not hang `pinr pin` forever.
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(60))
             .build()?;
         Ok(ReqwestHttp(client))
     }

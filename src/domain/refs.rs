@@ -22,6 +22,12 @@ pub fn parse_image(s: &str) -> Result<ImageRef, String> {
         _ => (rest, None),
     };
     let (registry, repository) = match name.split_once('/') {
+        // Docker Hub's official images live under `library/`, even when the
+        // registry is spelled out: `docker.io/node` is `docker.io/library/node`.
+        Some(("docker.io" | "index.docker.io", path)) if !path.contains('/') => {
+            ("docker.io".to_string(), format!("library/{path}"))
+        }
+        Some(("index.docker.io", path)) => ("docker.io".to_string(), path.to_string()),
         Some((first, path)) if first.contains(['.', ':']) || first == "localhost" => {
             (first.to_string(), path.to_string())
         }
@@ -95,6 +101,21 @@ mod tests {
         assert_eq!(
             parse_image("localhost:5000/app").unwrap(),
             image("localhost:5000", "app", None, None)
+        );
+    }
+
+    #[test]
+    fn explicit_docker_hub_names_are_normalized() {
+        for s in ["docker.io/node:20", "index.docker.io/library/node:20"] {
+            assert_eq!(
+                parse_image(s).unwrap(),
+                image("docker.io", "library/node", Some("20"), None),
+                "{s}"
+            );
+        }
+        assert_eq!(
+            parse_image("docker.io/bitnami/redis").unwrap(),
+            image("docker.io", "bitnami/redis", None, None)
         );
     }
 

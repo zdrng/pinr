@@ -22,10 +22,11 @@ pub async fn resolve<H: Http>(http: &H, git: &GitRef) -> Result<Resolution> {
 
     if let Some(sha) = refs.get(&format!("refs/tags/{rev}")) {
         // The most specific tag on the same commit: `v4` -> `v4.2.2`.
+        let prefix = format!("{rev}.");
         let tag = refs
             .iter()
             .filter_map(|(name, s)| Some((name.strip_prefix("refs/tags/")?, s)))
-            .filter(|(name, s)| *s == sha && (name == rev || name.starts_with(&format!("{rev}."))))
+            .filter(|(name, s)| *s == sha && (name == rev || name.starts_with(&prefix)))
             .map(|(name, _)| name)
             .max_by_key(|name| name.split('.').count())
             .unwrap_or(rev);
@@ -85,7 +86,7 @@ fn parse_refs(body: &[u8]) -> Result<BTreeMap<String, String>> {
 mod tests {
     use super::*;
     use crate::infra::http::{Method, Response};
-    use crate::mock::MockHttp;
+    use crate::mock::{MockHttp, ref_advertisement};
 
     const URL: &str = "https://github.com/actions/checkout.git/info/refs?service=git-upload-pack";
     const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -93,26 +94,11 @@ mod tests {
     const C: &str = "cccccccccccccccccccccccccccccccccccccccc";
     const TAG_OBJECT: &str = "dddddddddddddddddddddddddddddddddddddddd";
 
-    /// Build a ref advertisement from `(sha, refname)` lines.
-    fn advertisement(refs: &[(&str, &str)]) -> String {
-        let pkt = |s: &str| format!("{:04x}{s}", s.len() + 4);
-        let mut body = pkt("# service=git-upload-pack\n") + "0000";
-        for (i, (sha, name)) in refs.iter().enumerate() {
-            let caps = if i == 0 {
-                "\0multi_ack side-band-64k"
-            } else {
-                ""
-            };
-            body += &pkt(&format!("{sha} {name}{caps}\n"));
-        }
-        body + "0000"
-    }
-
     async fn resolve_rev(refs: &[(&str, &str)], rev: &str) -> Result<Resolution> {
         let http = MockHttp::new().on(
             Method::Get,
             URL,
-            Response::new(200).with_body(advertisement(refs)),
+            Response::new(200).with_body(ref_advertisement(refs)),
         );
         let git = GitRef {
             repo_url: "https://github.com/actions/checkout".into(),

@@ -131,18 +131,22 @@ impl<F: FileSystem, H: Http> PinService<F, H> {
         Ok(edits)
     }
 
-    /// Write edits to disk. Returns the number of changed files.
+    /// Write edits to disk. Returns the number of changed files. Every file is
+    /// checked before any is written, so a stale file leaves all of them untouched.
     pub fn apply(&self, edits: &[Edit]) -> Result<usize> {
         let mut by_file: BTreeMap<&PathBuf, Vec<&Edit>> = BTreeMap::new();
         for edit in edits {
             by_file.entry(&edit.path).or_default().push(edit);
         }
-        for (path, edits) in &by_file {
+        let mut updated = Vec::new();
+        for (path, edits) in by_file {
             let src = self.fs.read(path)?;
-            let new = plan::apply(&src, edits).map_err(|e| anyhow!(e))?;
-            self.fs.write(path, &new)?;
+            updated.push((path, plan::apply(&src, &edits).map_err(|e| anyhow!(e))?));
         }
-        Ok(by_file.len())
+        for (path, new) in &updated {
+            self.fs.write(path, new)?;
+        }
+        Ok(updated.len())
     }
 }
 

@@ -54,9 +54,13 @@ pub fn plan(occ: &Occurrence, src: &str, res: &Resolution) -> Vec<Edit> {
     }
 }
 
-/// `# v4`, `# tag=v4.2.2`, `# 1.0` or the old revision itself.
+/// `# v4`, `# tag=v4.2.2`, `# 1.0` or the old revision itself. A comment with
+/// more than one word, like `# v4 needed for tags`, is not.
 fn is_version_comment(body: &str, old_rev: &str) -> bool {
     let body = body.trim();
+    if body.contains(char::is_whitespace) {
+        return false;
+    }
     let body = body.strip_prefix("tag=").unwrap_or(body);
     let mut chars = body.chars();
     body == old_rev
@@ -144,6 +148,10 @@ mod tests {
         assert_eq!(
             pin_git("uses: actions/checkout@v4 # needed for tags"),
             format!("uses: actions/checkout@{SHA} # v4.2.2 # needed for tags")
+        );
+        assert_eq!(
+            pin_git("uses: actions/checkout@v4 # v4 needed for tags"),
+            format!("uses: actions/checkout@{SHA} # v4.2.2 # v4 needed for tags")
         );
     }
 
