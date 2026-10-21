@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.gif">
+  <img alt="pinr" src="docs/banner.gif">
+</picture>
+
 # pinr
 
 pinr finds every place where a repository pulls in outside code by a reference that can change,
