@@ -300,22 +300,30 @@ src/
   cli.rs, tui.rs     presentation: `check` / `pin` and the TUI
   config.rs          pinr.toml
   domain/            pure logic, no I/O
-    model.rs         Occurrence, Reference, Resolution, Edit
+    model.rs         Occurrence, Reference, Edit
     refs.rs          image reference parsing
-    plan.rs          resolutions → byte-range edits
+    edit.rs          applies byte-range edits
     extract/         one Extractor per file format
+  provider/          one Provider per protocol
+    mod.rs           Provider trait, Resolution
+    git.rs, oci.rs   tags → commit SHAs / digests, and how pins are written
   infra/             I/O behind traits
     http.rs, fs.rs   Http and FileSystem traits + real implementations
-    git.rs, oci.rs   resolvers
 ```
 
 The project is built along two independent axes:
 
 - **Extractors** (one per file format) find references and know nothing about resolving.
-- **Resolvers** (git and OCI) resolve references and know nothing about files.
+- **Providers** (one per protocol: git, OCI) resolve references and know nothing about file
+  formats. They only say which bytes to replace (git assumes YAML `#` comments).
 
 Both meet at the `Reference` type, so an image found in a Compose file and one found in a
-Dockerfile go through the same code.
+Dockerfile go through the same code, and GitHub Actions and GitLab includes share the git
+provider.
+
+A `Provider` has a `Ref` type (what extractors find) and a `Pin` type (what it resolves to).
+`Resolution` keeps the pin with the reference it was resolved from, so the two can't be mixed
+up with another provider's.
 
 ### Adding a file format
 
@@ -325,9 +333,18 @@ Dockerfile go through the same code.
 3. Register it in `extract::for_ecosystem`. The compiler points out every `match` that still
    needs the new variant.
 
+### Adding a provider
+
+1. Add the reference type to `domain/model.rs` and a variant for it to `Reference`, and
+   construct it in the extractors that find it.
+2. Implement `Provider` in `provider/<name>.rs`: `resolve` asks the remote for the pin,
+   `replacements` says how the pin is written into the file.
+3. Map the new `Reference` variant to the provider in `PinService::resolve`. The compiler
+   points out every other `match` that needs it.
+
 ### Tests
 
-- Every extractor and resolver has unit tests with inline fixtures.
+- Every extractor and provider has unit tests with inline fixtures.
 - `src/functional_tests.rs` runs a whole project with all five ecosystems through the service:
   file contents come from `MockFs`, registry and git responses from `MockHttp`. No test touches
   the network or the disk.

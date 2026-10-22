@@ -9,6 +9,7 @@ mod functional_tests;
 mod infra;
 #[cfg(test)]
 mod mock;
+mod provider;
 mod service;
 mod tui;
 

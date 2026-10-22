@@ -367,8 +367,10 @@ async fn failed_resolutions_leave_files_untouched() {
 
 #[test]
 fn apply_refuses_files_changed_since_scan_and_writes_nothing() {
-    use crate::domain::model::Resolution;
+    use crate::domain::model::Reference;
     use crate::infra::fs::FileSystem;
+    use crate::provider::Resolution;
+    use crate::provider::oci::{Digest, Oci};
 
     let (service, occurrences) = service();
     let find = |path: &str| {
@@ -378,14 +380,14 @@ fn apply_refuses_files_changed_since_scan_and_writes_nothing() {
             .unwrap()
     };
     let (dockerfile, compose) = (find("Dockerfile"), find("compose.yaml"));
-    let resolution = Ok(Resolution::Image {
-        digest: digest('c'),
-    });
-    let resolutions = [
-        (dockerfile.reference().unwrap().clone(), resolution.clone()),
-        (compose.reference().unwrap().clone(), resolution),
-    ]
-    .into();
+    let resolved = |occ: &Occurrence| {
+        let Some(Reference::Image(image)) = occ.reference() else {
+            panic!("not an image");
+        };
+        let resolution = Resolution::new::<Oci>(image.clone(), Digest(digest('c')));
+        (Reference::Image(image.clone()), Ok(resolution))
+    };
+    let resolutions = [resolved(dockerfile), resolved(compose)].into();
     let edits = service.plan(&[dockerfile, compose], &resolutions).unwrap();
 
     let changed = "services:\n  db:\n    image: quay.io/acme/postgres:17\n";

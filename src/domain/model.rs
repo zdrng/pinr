@@ -126,29 +126,6 @@ impl Occurrence {
     }
 }
 
-/// The immutable identifier a reference resolves to.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Resolution {
-    /// `tag` is the most specific tag on the commit (`v4` -> `v4.2.2`), or the
-    /// original revision for branches.
-    Git {
-        sha: String,
-        tag: String,
-    },
-    Image {
-        digest: String,
-    },
-}
-
-impl fmt::Display for Resolution {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Resolution::Git { sha, tag } => write!(f, "{sha} ({tag})"),
-            Resolution::Image { digest } => write!(f, "{digest}"),
-        }
-    }
-}
-
 /// Replace `span` (whose current text is `expected`) with `replacement`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edit {

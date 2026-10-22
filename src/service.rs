@@ -7,11 +7,13 @@ use anyhow::{Result, anyhow};
 use futures::{Stream, StreamExt};
 
 use crate::config::Config;
-use crate::domain::model::{Ecosystem, Edit, Kind, Occurrence, Reference, Resolution};
-use crate::domain::{extract, plan};
+use crate::domain::model::{Ecosystem, Edit, Kind, Occurrence, Reference};
+use crate::domain::{edit, extract};
 use crate::infra::fs::FileSystem;
 use crate::infra::http::Http;
-use crate::infra::{git, oci};
+use crate::provider::git::Git;
+use crate::provider::oci::Oci;
+use crate::provider::{self, Resolution};
 
 /// How many references are resolved concurrently.
 const CONCURRENCY: usize = 8;
@@ -82,10 +84,11 @@ impl<F: FileSystem, H: Http> PinService<F, H> {
             .any(|pattern| path.contains(pattern.as_str()) || reference.contains(pattern.as_str()))
     }
 
+    /// The one place that maps a kind of reference to its provider.
     pub async fn resolve(&self, reference: &Reference) -> Result<Resolution> {
         match reference {
-            Reference::Git(g) => git::resolve(&self.http, g).await,
-            Reference::Image(i) => oci::resolve(&self.http, i).await,
+            Reference::Git(r) => provider::resolve(&Git, &self.http, r).await,
+            Reference::Image(r) => provider::resolve(&Oci, &self.http, r).await,
         }
     }
 
@@ -126,7 +129,7 @@ impl<F: FileSystem, H: Http> PinService<F, H> {
             if !sources.contains_key(&occ.path) {
                 sources.insert(occ.path.clone(), self.fs.read(&occ.path)?);
             }
-            edits.extend(plan::plan(occ, &sources[&occ.path], res));
+            edits.extend(res.edits(occ, &sources[&occ.path]));
         }
         Ok(edits)
     }
@@ -141,7 +144,7 @@ impl<F: FileSystem, H: Http> PinService<F, H> {
         let mut updated = Vec::new();
         for (path, edits) in by_file {
             let src = self.fs.read(path)?;
-            updated.push((path, plan::apply(&src, &edits).map_err(|e| anyhow!(e))?));
+            updated.push((path, edit::apply(&src, &edits).map_err(|e| anyhow!(e))?));
         }
         for (path, new) in &updated {
             self.fs.write(path, new)?;
