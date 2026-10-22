@@ -1,0 +1,15 @@
+# cargo-deny: advisories, yanked crates, wildcard versions and sources.
+# Run: nix develop -c cargo deny check advisories bans sources
+# Licenses are not checked: pinr itself has no license yet.
+
+[advisories]
+yanked = "deny"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

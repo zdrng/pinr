@@ -267,7 +267,8 @@ ignore = [
 
 ## Development
 
-The dev shell provides the Rust toolchain, clippy, rustfmt and rust-analyzer:
+The dev shell provides the Rust toolchain, clippy, rustfmt, rust-analyzer and the security tools
+below:
 
 ```sh
 nix develop
@@ -275,6 +276,19 @@ cargo test
 cargo clippy --all-targets
 cargo fmt
 ```
+
+Security checks, all in CI (`ci.yml` on every push, `audit.yml` daily for new advisories):
+
+```sh
+nix develop -c cargo audit                                  # known vulnerabilities (RustSec)
+nix develop -c cargo deny --locked check advisories bans sources   # deny.toml
+nix develop -c scripts/geiger.sh                            # unsafe code in pinr and its dependencies (report only)
+nix develop -c scripts/check-reproducible.sh                # release build twice, must be bit for bit identical
+```
+
+pinr itself forbids `unsafe` code. Release builds are reproducible: `--locked`, the toolchain
+pinned by `flake.lock`, one codegen unit and no symbols (`[profile.release]`), and the script
+remaps the source, target and Cargo home directories so no machine paths end up in the binary.
 
 ### Architecture
 

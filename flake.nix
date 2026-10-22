@@ -23,6 +23,10 @@
             pkgs.clippy
             pkgs.rustfmt
             pkgs.rust-analyzer
+            # Security checks (README, "Development")
+            pkgs.cargo-audit
+            pkgs.cargo-deny
+            pkgs.cargo-geiger
             pkgs.git
           ]
           ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.libiconv ];
