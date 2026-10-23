@@ -2,6 +2,7 @@
 name = "pinr"
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0-only"
 
 [dependencies]
 anyhow = "1.0.104"
@@ -21,8 +22,8 @@ tree-sitter-yaml = "0.7.2"
 [lints.rust]
 unsafe_code = "forbid"
 
-# Reproducible release builds (scripts/check-reproducible.sh adds --locked and
-# path remapping): one codegen unit, no symbols.
+# Reproducible release builds (scripts/release.sh adds --locked and path
+# remapping): one codegen unit, no symbols.
 [profile.release]
 codegen-units = 1
 lto = true
