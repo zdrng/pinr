@@ -1,6 +1,6 @@
 use super::Extractor;
 use super::image;
-use super::yaml::{Scalar, scalars};
+use super::yaml::{Scalar, scalars, sibling};
 use crate::domain::model::{Found, GitRef, Kind, Reference};
 
 /// `.gitlab-ci.yml` and included CI files.
@@ -52,27 +52,19 @@ impl GitlabCi {
                 "template `{text}` comes from the GitLab instance and can't be pinned"
             )),
             ["project"] if text.contains('$') => warning(variable(text)),
-            ["project"] => {
-                // The `ref` next to `project` in the same mapping.
-                let rev = all.iter().find(|r| {
-                    r.mapping == s.mapping
-                        && r.path.len() == s.path.len()
-                        && r.path.last() == Some(&"ref")
-                });
-                match rev {
-                    Some(r) if r.text.contains('$') => warning(variable(r.text)),
-                    Some(r) => Some(Found {
-                        span: r.span.clone(),
-                        kind: Kind::Ref(Reference::Git(GitRef {
-                            repo_url: format!("https://{}/{}", self.host, text.trim_matches('/')),
-                            rev: r.text.to_string(),
-                        })),
-                    }),
-                    None => warning(format!(
-                        "project `{text}` follows the default branch; add a `ref:` to pin it"
-                    )),
-                }
-            }
+            ["project"] => match sibling(all, s, "ref") {
+                Some(r) if r.text.contains('$') => warning(variable(r.text)),
+                Some(r) => Some(Found {
+                    span: r.span.clone(),
+                    kind: Kind::Ref(Reference::Git(GitRef {
+                        repo_url: format!("https://{}/{}", self.host, text.trim_matches('/')),
+                        rev: r.text.to_string(),
+                    })),
+                }),
+                None => warning(format!(
+                    "project `{text}` follows the default branch; add a `ref:` to pin it"
+                )),
+            },
             ["component"] => self.component(s),
             _ => None,
         }

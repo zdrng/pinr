@@ -21,6 +21,14 @@ pub struct Scalar<'a> {
     pub text: &'a str,
 }
 
+/// The value of `key` in the same mapping as `s`, e.g. the `ref` next to a
+/// GitLab `project`.
+pub fn sibling<'s, 'a>(all: &'s [Scalar<'a>], s: &Scalar, key: &str) -> Option<&'s Scalar<'a>> {
+    all.iter().find(|r| {
+        r.mapping == s.mapping && r.path.len() == s.path.len() && r.path.last() == Some(&key)
+    })
+}
+
 /// Every scalar value (not keys) in `src`, in document order. Block scalars
 /// (`|`, `>`) and aliases are skipped.
 pub fn scalars(src: &str) -> Vec<Scalar<'_>> {

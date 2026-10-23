@@ -10,7 +10,8 @@ pub fn is_sha(s: &str) -> bool {
 /// Parse an image reference like `node:20`, `ghcr.io/org/app:1.2@sha256:…`.
 /// Returns a human-readable reason if it can't be pinned.
 pub fn parse_image(s: &str) -> Result<ImageRef, String> {
-    if s.contains('$') {
+    // `$VAR`, `${VAR}` and CircleCI's `<< parameters.x >>`.
+    if s.contains('$') || s.contains("<<") {
         return Err(format!("`{s}` uses a variable and can't be pinned"));
     }
     let (rest, digest) = match s.split_once('@') {

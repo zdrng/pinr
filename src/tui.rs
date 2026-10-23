@@ -19,9 +19,10 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
 use crate::cli::location;
-use crate::domain::model::{Kind, Occurrence, Reference, Resolution};
+use crate::domain::model::{Kind, Occurrence, Reference};
 use crate::infra::fs::FileSystem;
 use crate::infra::http::Http;
+use crate::provider::Resolution;
 use crate::service::{PinService, Resolutions};
 
 /// How often the spinner advances when nothing else happens.
@@ -338,16 +339,21 @@ mod tests {
     use crate::config::Config;
     use crate::domain::model::{Ecosystem, GitRef};
     use crate::mock::{MockFs, MockHttp};
+    use crate::provider::git::{Git, GitPin};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
     const SHA: &str = "11bd71901bbe5b1630ceea73d27597364c9af683";
 
-    fn git(repo: &str, rev: &str) -> Reference {
-        Reference::Git(GitRef {
+    fn git_ref(repo: &str, rev: &str) -> GitRef {
+        GitRef {
             repo_url: format!("https://github.com/{repo}"),
             rev: rev.into(),
-        })
+        }
+    }
+
+    fn git(repo: &str, rev: &str) -> Reference {
+        Reference::Git(git_ref(repo, rev))
     }
 
     /// `repo@rev` in `src` at `path`; the span covers the revision.
@@ -379,13 +385,12 @@ mod tests {
     }
 
     fn resolved(repo: &str, rev: &str) -> Msg {
-        Msg::Resolved(
-            git(repo, rev),
-            Ok(Resolution::Git {
-                sha: SHA.into(),
-                tag: "v4.2.2".into(),
-            }),
-        )
+        let pin = GitPin {
+            sha: SHA.into(),
+            tag: "v4.2.2".into(),
+        };
+        let resolution = Resolution::new::<Git>(git_ref(repo, rev), pin);
+        Msg::Resolved(git(repo, rev), Ok(resolution))
     }
 
     /// Rows: unpinned checkout (resolved), pinned, warning, unpinned setup-node (resolving).

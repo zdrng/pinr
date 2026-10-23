@@ -46,14 +46,22 @@ Pinning makes builds reproducible and closes a common supply-chain attack path.
 | Ecosystem | Files | What gets pinned |
 |---|---|---|
 | GitHub Actions | `.github/workflows/*.yml`, `action.yml` | `uses:` in steps and reusable workflows, `docker://` actions, `container:` and `services:` images |
+| Forgejo Actions | `.forgejo/workflows/*.yml` | Same as GitHub Actions |
+| Gitea Actions | `.gitea/workflows/*.yml` | Same as GitHub Actions |
 | GitLab CI | `.gitlab-ci.yml`, `*.gitlab-ci.yml` | `image:`, `services:`, `include: project` with `ref:`, `include: component` |
+| CircleCI | `.circleci/*.yml` | `docker:` images in jobs, executors and inline orbs |
+| Bitbucket Pipelines | `bitbucket-pipelines.yml` | The global `image:`, step images, service images |
+| Woodpecker | `.woodpecker.yml`, `.woodpecker/*.yml` | `image:` in `steps`, `services` and `clone`, including plugins |
+| Drone | `.drone.yml` | `image:` in `steps` and `services` |
+| pre-commit | `.pre-commit-config.yaml` | `rev:` of every hook repository |
 | Compose | `compose.yaml`, `docker-compose*.yml` | `services.*.image` |
 | Dockerfile | `Dockerfile`, `Containerfile`, `*.Dockerfile` | `FROM`, `COPY --from`, `RUN --mount=from=`, the `# syntax=` directive |
 | Podman Quadlet | `*.container`, `*.image`, `*.volume` | `Image=` |
 
 pinr walks the directory recursively and respects `.gitignore`. Things that stay inside the
 repository are ignored, such as local actions (`uses: ./…`), build stages (`FROM build`),
-`scratch` and references to other Quadlet units (`Image=base.image`).
+`scratch`, references to other Quadlet units (`Image=base.image`) and pre-commit's `local`
+and `meta` hooks.
 
 ## Install
 
@@ -184,9 +192,9 @@ pinned 2 references in 2 files
 
 ### Git references
 
-GitHub Actions, reusable workflows and GitLab includes and components are pinned to the full
-commit SHA. pinr adds a comment naming the most specific tag on that commit, so `v4` becomes
-`# v4.4.0`. Branches keep their name as the comment.
+Actions, reusable workflows, GitLab includes and components and pre-commit hooks are pinned
+to the full commit SHA. pinr adds a comment naming the most specific tag on that commit, so
+`v4` becomes `# v4.4.0`. Branches keep their name as the comment.
 
 ```yaml
 - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -198,9 +206,22 @@ include:
     ref: 44feccdf3a5f65891017ef143a78c7a0d22bb63b # v17.0.0
 ```
 
+pre-commit gets the `# frozen:` comment that `pre-commit autoupdate --freeze` writes, so
+`autoupdate` keeps working:
+
+```yaml
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b # frozen: v5.0.0
+```
+
+Forgejo and Gitea resolve `uses: actions/checkout@v4` against their `DEFAULT_ACTIONS_URL`,
+so pinr does the same: `https://data.forgejo.org` for Forgejo and `https://github.com` for
+Gitea, unless [configured](#configuration) otherwise. Absolute references like
+`uses: https://code.forgejo.org/actions/setup-go@v5` are resolved against the host they name.
+
 How pinr handles an existing comment on the same line:
 
-- A comment that looks like a version (`# v4`, `# tag=v4`) is replaced.
+- A comment that looks like a version (`# v4`, `# tag=v4`, `# frozen: v4`) is replaced.
 - Any other comment is kept, and the version is inserted before it:
   `@sha # v4.4.0 # needed for tags`.
 
@@ -241,12 +262,14 @@ silently skipping them:
 
 | Example | Why |
 |---|---|
-| `FROM node:${NODE_VERSION}`, `image: $CI_REGISTRY/app` | Uses a variable, so the value is only known at build time |
+| `FROM node:${NODE_VERSION}`, `image: $CI_REGISTRY/app`, `image: cimg/base:<< parameters.tag >>` | Uses a variable, so the value is only known at build time |
 | `uses: org/action@${{ inputs.ref }}` | Uses a GitHub Actions expression |
 | `include: remote: https://…` | Remote includes have no integrity check |
 | `include: template: …` | Comes from the GitLab instance itself |
 | `include: project: …` without `ref:` | Follows the default branch |
 | `component: …@~latest` | Follows the latest release |
+| `node: circleci/node@5`, `@volatile` | A CircleCI orb without a full `x.y.z` version follows new releases. Full versions can't change. |
+| `repo: git@github.com:org/hooks` in pre-commit | Only `https://` repositories can be resolved |
 | `Image=nginx` in a Quadlet | Podman resolves short names through `registries.conf`, which may not mean Docker Hub; use `docker.io/library/nginx` |
 
 Warnings are printed to stderr and don't change the exit code.
@@ -259,6 +282,10 @@ directory:
 ```toml
 # Host for GitLab `include: project` and `$CI_SERVER_FQDN` in components.
 gitlab_host = "gitlab.example.com"   # default: "gitlab.com"
+
+# Where `uses: owner/repo@rev` comes from: the instance's `[actions] DEFAULT_ACTIONS_URL`.
+forgejo_actions_url = "https://git.example.com"   # default: "https://data.forgejo.org"
+gitea_actions_url = "https://gitea.example.com"   # default: "https://github.com"
 
 # Skip references whose file path or reference contains one of these strings.
 ignore = [
@@ -282,8 +309,12 @@ ignore = [
 - Not followed:
   - YAML aliases and merge keys (`<<: *anchor`)
   - GitHub Docker actions declared with `runs.image`
+  - Bitbucket Pipes (`pipe:`)
   - systemd line continuations in Quadlets
   - image names split across lines in a Dockerfile
+- Forgejo and Gitea also run `.github/workflows` when their own directory doesn't exist. pinr
+  treats those files, like every `action.yml`, as GitHub Actions and resolves short `uses:`
+  against github.com.
 - GitLab component versions must match a git tag exactly. A partial version like `@1.0` that
   GitLab expands to the latest matching release fails to resolve.
 
@@ -329,22 +360,31 @@ src/
   cli.rs, tui.rs     presentation: `check` / `pin` and the TUI
   config.rs          pinr.toml
   domain/            pure logic, no I/O
-    model.rs         Occurrence, Reference, Resolution, Edit
+    model.rs         Occurrence, Reference, Edit
     refs.rs          image reference parsing
-    plan.rs          resolutions → byte-range edits
+    edit.rs          applies byte-range edits
     extract/         one Extractor per file format
+  provider/          one Provider per protocol
+    mod.rs           Provider trait, Resolution
+    git.rs, oci.rs   tags → commit SHAs / digests, and how pins are written
   infra/             I/O behind traits
     http.rs, fs.rs   Http and FileSystem traits + real implementations
-    git.rs, oci.rs   resolvers
 ```
 
 The project is built along two independent axes:
 
 - **Extractors** (one per file format) find references and know nothing about resolving.
-- **Resolvers** (git and OCI) resolve references and know nothing about files.
+- **Providers** (one per protocol: git, OCI) resolve references and know nothing about file
+  formats. They only say which bytes to replace. The file format only decides how a version
+  comment next to a git SHA looks (`# v4.4.0` or pre-commit's `# frozen: v4.4.0`).
 
 Both meet at the `Reference` type, so an image found in a Compose file and one found in a
-Dockerfile go through the same code.
+Dockerfile go through the same code, and GitHub Actions, GitLab includes and pre-commit share the git
+provider.
+
+A `Provider` has a `Ref` type (what extractors find) and a `Pin` type (what it resolves to).
+`Resolution` keeps the pin with the reference it was resolved from, so the two can't be mixed
+up with another provider's.
 
 ### Adding a file format
 
@@ -353,11 +393,22 @@ Dockerfile go through the same code.
    is exactly the text to replace (only the revision for git refs, the whole image for images).
 3. Register it in `extract::for_ecosystem`. The compiler points out every `match` that still
    needs the new variant.
+4. If the format writes version comments next to git SHAs differently, say so in
+   `Ecosystem::version_comment`.
+
+### Adding a provider
+
+1. Add the reference type to `domain/model.rs` and a variant for it to `Reference`, and
+   construct it in the extractors that find it.
+2. Implement `Provider` in `provider/<name>.rs`: `resolve` asks the remote for the pin,
+   `replacements` says how the pin is written into the file.
+3. Map the new `Reference` variant to the provider in `PinService::resolve`. The compiler
+   points out every other `match` that needs it.
 
 ### Tests
 
-- Every extractor and resolver has unit tests with inline fixtures.
-- `src/functional_tests.rs` runs a whole project with all five ecosystems through the service:
+- Every extractor and provider has unit tests with inline fixtures.
+- `src/functional_tests.rs` runs a whole project with several ecosystems through the service:
   file contents come from `MockFs`, registry and git responses from `MockHttp`. No test touches
   the network or the disk.
 

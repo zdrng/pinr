@@ -9,6 +9,7 @@ mod functional_tests;
 mod infra;
 #[cfg(test)]
 mod mock;
+mod provider;
 mod service;
 mod tui;
 
@@ -24,7 +25,7 @@ use crate::infra::fs::RealFs;
 use crate::infra::http::ReqwestHttp;
 use crate::service::PinService;
 
-/// Pin GitHub Actions, GitLab CI includes and container images to immutable hashes.
+/// Pin CI actions, includes, pre-commit hooks and container images to immutable hashes.
 ///
 /// Without a command, opens the interactive TUI.
 #[derive(Parser)]
