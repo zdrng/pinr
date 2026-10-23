@@ -32,6 +32,7 @@ Renovate, which both understand the `@sha # tag` format pinr writes.
 - [Exit codes](#exit-codes)
 - [Limitations](#limitations)
 - [Development](#development)
+- [License](#license)
 
 ## Why pin?
 
@@ -55,6 +56,27 @@ repository are ignored, such as local actions (`uses: ./…`), build stages (`FR
 `scratch` and references to other Quadlet units (`Image=base.image`).
 
 ## Install
+
+Prebuilt binaries are on the [releases page](https://github.com/zdrng/pinr/releases): static
+Linux binaries (x86_64, aarch64), a macOS universal binary and a Windows executable. Every
+asset is attested by the release workflow (SLSA build provenance, Sigstore), so you can check it
+was built by this repository's workflow from `main`, and it is reproducible
+(`scripts/release.sh`):
+
+```sh
+v=<version>; target=x86_64-unknown-linux-musl   # or aarch64-unknown-linux-musl, universal-apple-darwin
+curl -fsSLO https://github.com/zdrng/pinr/releases/download/v$v/pinr-$v-$target.tar.gz
+gh attestation verify pinr-$v-$target.tar.gz --repo zdrng/pinr
+tar -xzf pinr-$v-$target.tar.gz
+install -m 0755 pinr-$v-$target/pinr ~/.local/bin/pinr
+```
+
+On Windows, download `pinr-<version>-x86_64-pc-windows-msvc.exe` from the release and check it
+the same way (`gh attestation verify pinr-<version>-x86_64-pc-windows-msvc.exe --repo zdrng/pinr`).
+
+The binaries carry no operating system code signature. Downloaded with `curl` they just run; a
+browser download is quarantined by macOS (`xattr -d com.apple.quarantine pinr`) and makes
+Windows SmartScreen ask once (More info → Run anyway).
 
 With Cargo:
 
@@ -280,15 +302,22 @@ cargo fmt
 Security checks, all in CI (`ci.yml` on every push, `audit.yml` daily for new advisories):
 
 ```sh
+nix develop -c scripts/check.sh                             # fmt, clippy, tests, deny, audit: before every commit
 nix develop -c cargo audit                                  # known vulnerabilities (RustSec)
-nix develop -c cargo deny --locked check advisories bans sources   # deny.toml
+nix develop -c cargo deny --locked check                    # advisories, licenses, sources (deny.toml)
 nix develop -c scripts/geiger.sh                            # unsafe code in pinr and its dependencies (report only)
-nix develop -c scripts/check-reproducible.sh                # release build twice, must be bit for bit identical
+nix develop .#release -c scripts/release.sh reproduce x86_64-unknown-linux-musl dist   # release build twice, must be identical
 ```
 
 pinr itself forbids `unsafe` code. Release builds are reproducible: `--locked`, the toolchain
-pinned by `flake.lock`, one codegen unit and no symbols (`[profile.release]`), and the script
-remaps the source, target and Cargo home directories so no machine paths end up in the binary.
+pinned by `flake.lock`, one codegen unit and no symbols (`[profile.release]`), and
+`scripts/release.sh` remaps the source, target and Cargo home directories so no machine paths end up in the binary.
+
+Releasing: raise `version` in `Cargo.toml` on `main`, then Actions → Release → Run workflow
+(`release.yml`). It runs `scripts/check.sh`, builds every target twice
+(`scripts/release.sh reproduce`, which fails unless both builds are identical), attests the
+assets and creates the release with its tag `v<version>`; `dry-run` builds and checks without
+publishing. The workflow and `scripts/release.sh` are the same in mendr, pinr and lootr.
 
 ### Architecture
 
@@ -331,3 +360,8 @@ Dockerfile go through the same code.
 - `src/functional_tests.rs` runs a whole project with all five ecosystems through the service:
   file contents come from `MockFs`, registry and git responses from `MockHttp`. No test touches
   the network or the disk.
+
+## License
+
+GPL-3.0-only, see [LICENSE](LICENSE). Anyone may use pinr, also commercially; distributed
+modifications must be released under the same license.
