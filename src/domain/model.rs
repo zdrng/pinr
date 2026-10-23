@@ -5,7 +5,14 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Ecosystem {
     GithubActions,
+    ForgejoActions,
+    GiteaActions,
     GitlabCi,
+    CircleCi,
+    BitbucketPipelines,
+    Woodpecker,
+    Drone,
+    PreCommit,
     Compose,
     Dockerfile,
     Quadlet,
@@ -15,12 +22,35 @@ impl Ecosystem {
     pub fn name(self) -> &'static str {
         match self {
             Ecosystem::GithubActions => "github-actions",
+            Ecosystem::ForgejoActions => "forgejo-actions",
+            Ecosystem::GiteaActions => "gitea-actions",
             Ecosystem::GitlabCi => "gitlab-ci",
+            Ecosystem::CircleCi => "circleci",
+            Ecosystem::BitbucketPipelines => "bitbucket-pipelines",
+            Ecosystem::Woodpecker => "woodpecker",
+            Ecosystem::Drone => "drone",
+            Ecosystem::PreCommit => "pre-commit",
             Ecosystem::Compose => "compose",
             Ecosystem::Dockerfile => "dockerfile",
             Ecosystem::Quadlet => "quadlet",
         }
     }
+
+    pub fn version_comment(self) -> VersionComment {
+        match self {
+            Ecosystem::PreCommit => VersionComment::Frozen,
+            _ => VersionComment::Plain,
+        }
+    }
+}
+
+/// How a file format writes the version next to a pinned git SHA.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VersionComment {
+    /// `# v4.2.2`
+    Plain,
+    /// `# frozen: v4.2.2`, as written by `pre-commit autoupdate --freeze`.
+    Frozen,
 }
 
 /// Something external a project pulls in.

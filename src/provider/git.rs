@@ -8,7 +8,7 @@ use std::ops::Range;
 use anyhow::{Result, bail};
 
 use super::{Provider, Replacements};
-use crate::domain::model::GitRef;
+use crate::domain::model::{GitRef, VersionComment};
 use crate::infra::http::{Http, Request};
 
 pub struct Git;
@@ -70,8 +70,17 @@ impl Provider for Git {
 
     /// The SHA plus a `# v4.2.2` comment (git refs only appear in YAML). An
     /// existing version comment is replaced, any other comment is kept.
-    fn replacements(git: &GitRef, pin: &GitPin, src: &str, span: Range<usize>) -> Replacements {
-        let tag = &pin.tag;
+    fn replacements(
+        git: &GitRef,
+        pin: &GitPin,
+        src: &str,
+        span: Range<usize>,
+        comment: VersionComment,
+    ) -> Replacements {
+        let tag = match comment {
+            VersionComment::Plain => pin.tag.clone(),
+            VersionComment::Frozen => format!("frozen: {}", pin.tag),
+        };
         let eol = src[span.end..]
             .find('\n')
             .map_or(src.len(), |i| span.end + i);
@@ -98,10 +107,11 @@ impl Provider for Git {
     }
 }
 
-/// `# v4`, `# tag=v4.2.2`, `# 1.0` or the old revision itself. A comment with
-/// more than one word, like `# v4 needed for tags`, is not.
+/// `# v4`, `# tag=v4.2.2`, `# frozen: 1.0` or the old revision itself. A
+/// comment with more than one word, like `# v4 needed for tags`, is not.
 fn is_version_comment(body: &str, old_rev: &str) -> bool {
     let body = body.trim();
+    let body = body.strip_prefix("frozen:").unwrap_or(body).trim_start();
     if body.contains(char::is_whitespace) {
         return false;
     }
@@ -244,7 +254,11 @@ mod tests {
     }
 
     fn pin_v4(src: &str) -> String {
-        let start = src.find("@v4").unwrap() + 1;
+        pin_v4_with(src, VersionComment::Plain)
+    }
+
+    fn pin_v4_with(src: &str, comment: VersionComment) -> String {
+        let start = src.find("v4").unwrap();
         let git = GitRef {
             repo_url: "https://github.com/actions/checkout".into(),
             rev: "v4".into(),
@@ -253,7 +267,7 @@ mod tests {
             sha: A.into(),
             tag: "v4.2.2".into(),
         };
-        pin::<Git>(&git, &pin_to, src, start..start + 2)
+        pin::<Git>(&git, &pin_to, src, start..start + 2, comment)
     }
 
     #[test]
@@ -289,6 +303,20 @@ mod tests {
         assert_eq!(
             pin_v4("uses: actions/checkout@v4 # v4 needed for tags"),
             format!("uses: actions/checkout@{A} # v4.2.2 # v4 needed for tags")
+        );
+    }
+
+    #[test]
+    fn frozen_comments_for_pre_commit() {
+        let frozen = |src| pin_v4_with(src, VersionComment::Frozen);
+        assert_eq!(frozen("rev: v4\n"), format!("rev: {A} # frozen: v4.2.2\n"));
+        assert_eq!(
+            frozen("rev: v4  # frozen: v4.0.0"),
+            format!("rev: {A}  # frozen: v4.2.2")
+        );
+        assert_eq!(
+            frozen("rev: v4 # pinned for py3.8"),
+            format!("rev: {A} # frozen: v4.2.2 # pinned for py3.8")
         );
     }
 }

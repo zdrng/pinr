@@ -15,6 +15,8 @@ const SETUP_NODE_TAG_OBJECT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SETUP_NODE_SHA: &str = "49933ea5288caeca8642d1e84afbd3f7d6820020";
 const TEMPLATES_SHA: &str = "cccccccccccccccccccccccccccccccccccccccc";
 const CACHE_SHA: &str = "0400d5f644dc74513175e3cd8d07132dd4860809";
+const HOOKS_SHA: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+const FORGEJO_CHECKOUT_SHA: &str = "ffffffffffffffffffffffffffffffffffffffff";
 
 const CI_YML: &str = "\
 name: ci
@@ -66,6 +68,22 @@ test:
 const QUADLET: &str = "\
 [Container]
 Image=ghcr.io/acme/web:2.0
+";
+
+const FORGEJO_YML: &str = "\
+jobs:
+  test:
+    steps:
+      - uses: actions/checkout@v4
+";
+
+const PRE_COMMIT: &str = "\
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks: [{id: trailing-whitespace}]
+  - repo: local
+    hooks: [{id: fmt, entry: cargo fmt, language: system}]
 ";
 
 fn digest(c: char) -> String {
@@ -120,6 +138,16 @@ fn mocked_http() -> MockHttp {
         "https://gitlab.com/group/templates",
         &[(TEMPLATES_SHA, "refs/tags/v1.2")],
     );
+    let http = git_mock(
+        http,
+        "https://data.forgejo.org/actions/checkout",
+        &[(FORGEJO_CHECKOUT_SHA, "refs/tags/v4")],
+    );
+    let http = git_mock(
+        http,
+        "https://github.com/pre-commit/pre-commit-hooks",
+        &[(HOOKS_SHA, "refs/tags/v5.0.0")],
+    );
 
     // Docker Hub wants an anonymous token first.
     let node = "https://registry-1.docker.io/v2/library/node/manifests/20";
@@ -160,9 +188,11 @@ fn mocked_http() -> MockHttp {
     )
 }
 
-const FILES: [(&str, &str); 6] = [
+const FILES: [(&str, &str); 8] = [
     (".github/workflows/ci.yml", CI_YML),
     (".github/workflows/release.yml", RELEASE_YML),
+    (".forgejo/workflows/test.yml", FORGEJO_YML),
+    (".pre-commit-config.yaml", PRE_COMMIT),
     ("Dockerfile", DOCKERFILE),
     ("compose.yaml", COMPOSE),
     (".gitlab-ci.yml", GITLAB_CI),
@@ -202,12 +232,14 @@ fn scan_finds_unpinned_refs_and_warnings() {
     assert_eq!(
         found,
         [
+            ".forgejo/workflows/test.yml:4 v4",
             ".github/workflows/ci.yml:10 v4",
             ".github/workflows/ci.yml:6 node:20",
             ".github/workflows/ci.yml:8 v4",
             ".github/workflows/release.yml:5 v4",
             ".gitlab-ci.yml:3 v1.2",
             ".gitlab-ci.yml:6 ghcr.io/acme/runner:1",
+            ".pre-commit-config.yaml:3 v5.0.0",
             "Dockerfile:1 node:20",
             "Dockerfile:3 gcr.io/distroless/nodejs20-debian12",
             "compose.yaml:3 quay.io/acme/postgres:16",
@@ -224,7 +256,7 @@ async fn pin_rewrites_every_file() {
     let resolutions = service.resolve_all(&occurrences).await;
     let targets: Vec<&Occurrence> = unpinned(&occurrences).collect();
     let edits = service.plan(&targets, &resolutions).unwrap();
-    assert_eq!(service.apply(&edits).unwrap(), 6);
+    assert_eq!(service.apply(&edits).unwrap(), 8);
 
     let fs = service.fs();
     assert_eq!(
@@ -255,6 +287,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: \"actions/checkout@{CHECKOUT_SHA}\" # v4.2.2
+"
+        )
+    );
+    assert_eq!(
+        fs.get(".forgejo/workflows/test.yml"),
+        format!(
+            "\
+jobs:
+  test:
+    steps:
+      - uses: actions/checkout@{FORGEJO_CHECKOUT_SHA} # v4
+"
+        )
+    );
+    assert_eq!(
+        fs.get(".pre-commit-config.yaml"),
+        format!(
+            "\
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: {HOOKS_SHA} # frozen: v5.0.0
+    hooks: [{{id: trailing-whitespace}}]
+  - repo: local
+    hooks: [{{id: fmt, entry: cargo fmt, language: system}}]
 "
         )
     );

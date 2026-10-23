@@ -6,7 +6,7 @@ use std::ops::Range;
 use anyhow::{Context, Result, bail};
 
 use super::{Provider, Replacements};
-use crate::domain::model::ImageRef;
+use crate::domain::model::{ImageRef, VersionComment};
 use crate::infra::http::{Http, Request, Response};
 
 /// Index types first, so multi-arch images pin the index rather than one platform.
@@ -69,6 +69,7 @@ impl Provider for Oci {
         digest: &Digest,
         src: &str,
         span: Range<usize>,
+        _comment: VersionComment,
     ) -> Replacements {
         let latest = if image.tag.is_none() { ":latest" } else { "" };
         let pinned = format!("{}{latest}@{digest}", &src[span.clone()]);
@@ -281,7 +282,10 @@ mod tests {
             let image = parse_image(raw).unwrap();
             let digest = Digest("sha256:abc".into());
             let span = start..start + raw.len();
-            assert_eq!(pin::<Oci>(&image, &digest, src, span), expected);
+            assert_eq!(
+                pin::<Oci>(&image, &digest, src, span, VersionComment::Plain),
+                expected
+            );
         }
     }
 }

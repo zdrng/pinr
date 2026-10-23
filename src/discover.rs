@@ -21,16 +21,29 @@ pub fn discover(root: &Path) -> Vec<(PathBuf, Ecosystem)> {
 pub fn detect(path: &Path) -> Option<Ecosystem> {
     let name = path.file_name()?.to_str()?;
     let is_yaml = name.ends_with(".yml") || name.ends_with(".yaml");
-    let in_workflows = path
-        .parent()
-        .is_some_and(|p| p.ends_with(".github/workflows"));
+    let stem = name.trim_end_matches(".yml").trim_end_matches(".yaml");
+    let in_dir = |dir: &str| path.parent().is_some_and(|p| p.ends_with(dir));
 
-    if is_yaml && (in_workflows || name == "action.yml" || name == "action.yaml") {
+    if is_yaml && (in_dir(".github/workflows") || stem == "action") {
         Some(Ecosystem::GithubActions)
+    } else if is_yaml && in_dir(".forgejo/workflows") {
+        Some(Ecosystem::ForgejoActions)
+    } else if is_yaml && in_dir(".gitea/workflows") {
+        Some(Ecosystem::GiteaActions)
     } else if is_yaml && name.contains("gitlab-ci") {
         Some(Ecosystem::GitlabCi)
     } else if is_yaml && (name.starts_with("compose") || name.starts_with("docker-compose")) {
         Some(Ecosystem::Compose)
+    } else if is_yaml && in_dir(".circleci") {
+        Some(Ecosystem::CircleCi)
+    } else if is_yaml && stem == "bitbucket-pipelines" {
+        Some(Ecosystem::BitbucketPipelines)
+    } else if is_yaml && (stem == ".woodpecker" || in_dir(".woodpecker")) {
+        Some(Ecosystem::Woodpecker)
+    } else if is_yaml && stem == ".drone" {
+        Some(Ecosystem::Drone)
+    } else if is_yaml && stem == ".pre-commit-config" {
+        Some(Ecosystem::PreCommit)
     } else if name.ends_with(".dockerignore") {
         // `Dockerfile.dockerignore` holds ignore patterns, not instructions.
         None
@@ -61,8 +74,24 @@ mod tests {
         let cases = [
             (".github/workflows/ci.yml", Some(Ecosystem::GithubActions)),
             ("actions/setup/action.yaml", Some(Ecosystem::GithubActions)),
+            (
+                ".forgejo/workflows/ci.yaml",
+                Some(Ecosystem::ForgejoActions),
+            ),
+            (".gitea/workflows/ci.yml", Some(Ecosystem::GiteaActions)),
             (".gitlab-ci.yml", Some(Ecosystem::GitlabCi)),
             ("ci/build.gitlab-ci.yaml", Some(Ecosystem::GitlabCi)),
+            (".circleci/config.yml", Some(Ecosystem::CircleCi)),
+            (".circleci/docker-compose.yml", Some(Ecosystem::Compose)),
+            (
+                "bitbucket-pipelines.yml",
+                Some(Ecosystem::BitbucketPipelines),
+            ),
+            (".woodpecker.yaml", Some(Ecosystem::Woodpecker)),
+            (".woodpecker/build.yml", Some(Ecosystem::Woodpecker)),
+            (".drone.yml", Some(Ecosystem::Drone)),
+            (".pre-commit-config.yaml", Some(Ecosystem::PreCommit)),
+            (".pre-commit-hooks.yaml", None),
             ("compose.yaml", Some(Ecosystem::Compose)),
             ("deploy/docker-compose.prod.yml", Some(Ecosystem::Compose)),
             ("Dockerfile", Some(Ecosystem::Dockerfile)),

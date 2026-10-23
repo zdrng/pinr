@@ -9,6 +9,10 @@ use serde::Deserialize;
 pub struct Config {
     /// Host for GitLab `include: project` and `$CI_SERVER_FQDN`.
     pub gitlab_host: String,
+    /// Where Forgejo resolves `uses: owner/repo@rev` (its `DEFAULT_ACTIONS_URL`).
+    pub forgejo_actions_url: String,
+    /// Where Gitea resolves `uses: owner/repo@rev` (its `DEFAULT_ACTIONS_URL`).
+    pub gitea_actions_url: String,
     /// Skip occurrences whose path or reference contains one of these strings.
     pub ignore: Vec<String>,
 }
@@ -17,6 +21,8 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             gitlab_host: "gitlab.com".into(),
+            forgejo_actions_url: "https://data.forgejo.org".into(),
+            gitea_actions_url: "https://github.com".into(),
             ignore: Vec::new(),
         }
     }

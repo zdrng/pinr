@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::domain::model::{Edit, Occurrence};
+use crate::domain::model::{Edit, Occurrence, VersionComment};
 use crate::infra::http::Http;
 
 /// Byte ranges of a file and the text that replaces them.
@@ -31,12 +31,14 @@ pub trait Provider: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Self::Pin>> + Send;
 
     /// Byte ranges of `src` to replace so that the reference found at `span`
-    /// is pinned to `pin`.
+    /// is pinned to `pin`. `comment` is how the file format writes versions
+    /// next to a pin, for providers that add one.
     fn replacements(
         reference: &Self::Ref,
         pin: &Self::Pin,
         src: &str,
         span: Range<usize>,
+        comment: VersionComment,
     ) -> Replacements;
 }
 
@@ -59,19 +61,23 @@ pub struct Resolution {
 }
 
 /// `P::replacements` with the reference and pin already filled in.
-type ReplaceFn = dyn Fn(&str, Range<usize>) -> Replacements + Send + Sync;
+type ReplaceFn = dyn Fn(&str, Range<usize>, VersionComment) -> Replacements + Send + Sync;
 
 impl Resolution {
     pub fn new<P: Provider>(reference: P::Ref, pin: P::Pin) -> Self {
         Resolution {
             pin: pin.to_string().into(),
-            replacements: Arc::new(move |src, span| P::replacements(&reference, &pin, src, span)),
+            replacements: Arc::new(move |src, span, comment| {
+                P::replacements(&reference, &pin, src, span, comment)
+            }),
         }
     }
 
     /// Edits that pin `occ`, found in `src`.
     pub fn edits(&self, occ: &Occurrence, src: &str) -> Vec<Edit> {
-        to_edits(&occ.path, src, (self.replacements)(src, occ.span.clone()))
+        let comment = occ.ecosystem.version_comment();
+        let replacements = (self.replacements)(src, occ.span.clone(), comment);
+        to_edits(&occ.path, src, replacements)
     }
 }
 
@@ -95,8 +101,14 @@ fn to_edits(path: &Path, src: &str, replacements: Replacements) -> Vec<Edit> {
 
 /// `src` with `P`'s replacements for the reference at `span` applied.
 #[cfg(test)]
-pub fn pin<P: Provider>(reference: &P::Ref, to: &P::Pin, src: &str, span: Range<usize>) -> String {
-    let replacements = P::replacements(reference, to, src, span);
+pub fn pin<P: Provider>(
+    reference: &P::Ref,
+    to: &P::Pin,
+    src: &str,
+    span: Range<usize>,
+    comment: VersionComment,
+) -> String {
+    let replacements = P::replacements(reference, to, src, span, comment);
     let edits = to_edits(Path::new("test"), src, replacements);
     crate::domain::edit::apply(src, &edits.iter().collect::<Vec<_>>()).unwrap()
 }
