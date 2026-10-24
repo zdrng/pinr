@@ -76,7 +76,11 @@
           packages = [
             (pkgs.rust-bin.stable.${releaseRust}.minimal.override { targets = releaseTargets; })
             pkgs.cargo-zigbuild
-            pkgs.zig
+            # zig 0.16's `zig cc` breaks the static musl link on Linux runners
+            # (undefined symbols with empty names, referenced from the C
+            # objects built for tree-sitter and aws-lc). Pin the last known
+            # good zig until the upstream regression is fixed.
+            pkgs.zig_0_15
             pkgs.cargo-cyclonedx
             pkgs.coreutils
             pkgs.gnutar
